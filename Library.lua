@@ -5488,6 +5488,34 @@ function Library:CreateWindow(WindowInfo)
             })
         end
 
+                -- Minimize button (minimize to icon)
+        local MinimizeIcon = Library:GetIcon("minus")
+        local MinimizeButton = New("ImageButton", {
+            AnchorPoint = Vector2.new(1, 0.5),
+            BackgroundColor3 = "MainColor",
+            BorderColor3 = "OutlineColor",
+            BorderSizePixel = 1,
+            Position = UDim2.new(1, -48, 0.5, 0),
+            Size = UDim2.fromOffset(28, 28),
+            SizeConstraint = Enum.SizeConstraint.RelativeYY,
+            Image = MinimizeIcon and MinimizeIcon.Url or "",
+            ImageRectOffset = MinimizeIcon and MinimizeIcon.ImageRectOffset or Vector2.zero,
+            ImageRectSize = MinimizeIcon and MinimizeIcon.ImageRectSize or Vector2.zero,
+            Parent = TopBar,
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius - 1),
+            Parent = MinimizeButton,
+        })
+        New("UIStroke", {
+            Color = "OutlineColor",
+            Parent = MinimizeButton,
+        })
+        MinimizeButton.MouseButton1Click:Connect(function()
+            Library:Toggle(false) -- minimize to icon
+        end)
+
+
         --// Bottom Bar \\--
         local BottomBar = New("Frame", {
             AnchorPoint = Vector2.new(0, 1),
@@ -5586,6 +5614,35 @@ function Library:CreateWindow(WindowInfo)
             Parent = Container,
         })
     end
+
+            -- OpenButton (Icon) to show/hide window
+        local OpenIconData = Library:GetIcon("square")
+        local OpenButton = New("ImageButton", {
+            AnchorPoint = Vector2.new(0, 1),
+            BackgroundColor3 = "MainColor",
+            BorderColor3 = "OutlineColor",
+            BorderSizePixel = 1,
+            Position = UDim2.new(0, 6, 1, -6), -- bottom-left
+            Size = UDim2.fromOffset(34, 34),
+            Image = OpenIconData and OpenIconData.Url or "",
+            ImageRectOffset = OpenIconData and OpenIconData.ImageRectOffset or Vector2.zero,
+            ImageRectSize = OpenIconData and OpenIconData.ImageRectSize or Vector2.zero,
+            Parent = ModalScreenGui, -- keep input working when modal is active
+        })
+        New("UICorner", {
+            CornerRadius = UDim.new(0, WindowInfo.CornerRadius - 1),
+            Parent = OpenButton,
+        })
+        New("UIStroke", {
+            Color = "OutlineColor",
+            Parent = OpenButton,
+        })
+        Library:MakeDraggable(OpenButton, OpenButton, true) -- draggable even when window hidden
+        OpenButton.MouseButton1Click:Connect(function()
+            Library:Toggle()
+        end)
+        Library.OpenButton = OpenButton
+
 
     --// Window Table \\--
     local Window = {}
@@ -6510,7 +6567,7 @@ function Library:CreateWindow(WindowInfo)
     end
 
     if Library.IsMobile then
-        local ToggleButton = Library:AddDraggableButton("Toggle", function()
+       --[[local ToggleButton = Library:AddDraggableButton("Toggle", function()
             Library:Toggle()
         end)
 
@@ -6527,7 +6584,7 @@ function Library:CreateWindow(WindowInfo)
             LockButton.Button.AnchorPoint = Vector2.new(1, 0)
         else
             LockButton.Button.Position = UDim2.fromOffset(6, 46)
-        end
+        end]]--
     end
 
     --// Execution \\--
@@ -6535,20 +6592,12 @@ function Library:CreateWindow(WindowInfo)
         Library:UpdateSearch(SearchBox.Text)
     end)
 
-    Library:GiveSignal(UserInputService.InputBegan:Connect(function(Input: InputObject)
+        -- Use OpenButton for show/hide; keybind toggle disabled
+    Library:GiveSignal(UserInputService.InputBegan:Connect(function(_Input: InputObject)
         if UserInputService:GetFocusedTextBox() then
             return
         end
-
-        if
-            (
-                typeof(Library.ToggleKeybind) == "table"
-                and Library.ToggleKeybind.Type == "KeyPicker"
-                and Input.KeyCode.Name == Library.ToggleKeybind.Value
-            ) or Input.KeyCode == Library.ToggleKeybind
-        then
-            Library.Toggle()
-        end
+        -- no-op
     end))
 
     Library:GiveSignal(UserInputService.WindowFocused:Connect(function()
