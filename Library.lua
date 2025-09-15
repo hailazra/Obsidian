@@ -5623,35 +5623,7 @@ function Library:CreateWindow(WindowInfo)
         })
     end
 
-            -- OpenButton (Icon) to show/hide window
-        local OpenIconData = Library:GetIcon("square")
-        local OpenButton = New("ImageButton", {
-            AnchorPoint = Vector2.new(0, 1),
-            BackgroundColor3 = "MainColor",
-            BorderColor3 = "OutlineColor",
-            BorderSizePixel = 1,
-            Position = UDim2.new(0, 6, 1, -6), -- bottom-left
-            Size = UDim2.fromOffset(34, 34),
-            Image = OpenIconData and OpenIconData.Url or "",
-            ImageRectOffset = OpenIconData and OpenIconData.ImageRectOffset or Vector2.zero,
-            ImageRectSize = OpenIconData and OpenIconData.ImageRectSize or Vector2.zero,
-            Parent = ModalScreenGui, -- keep input working when modal is active
-        })
-        New("UICorner", {
-            CornerRadius = UDim.new(0, WindowInfo.CornerRadius - 1),
-            Parent = OpenButton,
-        })
-        New("UIStroke", {
-            Color = "OutlineColor",
-            Parent = OpenButton,
-        })
-        -- Advanced icon controller manages dragging; default draggable disabled for icon
-        -- Advanced IconController will manage click vs drag; disable default click toggle
-        OpenButton.MouseButton1Click:Connect(function()
-            -- handled by advanced icon controller
-        end)
-        Library.OpenButton = OpenButton
-        OpenButton.Visible = not Library.Toggled
+        -- Advanced IconController will create its own independent icon GUI; disable built-in OpenButton
 
 
     --// Window Table \\--
@@ -5674,12 +5646,18 @@ function Library:CreateWindow(WindowInfo)
     -- Wire minimize button to Window:Close now that Window exists
     if _connectMinimize then _connectMinimize(Window) end
 
-    -- Advanced icon controller (drag + snap + animated show/hide)
+    -- Advanced IconController (independent icon GUI like reference)
+    local function getUiRoot()
+        local ok, root = pcall(function()
+            return (gethui and gethui()) or CoreGui or Library.LocalPlayer:WaitForChild("PlayerGui")
+        end)
+        return ok and root or CoreGui
+    end
+
     local function clampToScreen(guiObj)
         local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
         local pos = guiObj.Position
         local sizePx = guiObj.AbsoluteSize
-
         local xOff = math.clamp(pos.X.Offset, 0, math.max(0, vp.X - sizePx.X))
         local yOff = math.clamp(pos.Y.Offset, 36, math.max(36, vp.Y - sizePx.Y))
         guiObj.Position = UDim2.new(0, xOff, 0, yOff)
@@ -5690,12 +5668,10 @@ function Library:CreateWindow(WindowInfo)
         local vp = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
         local pos = guiObj.Position
         local sizePx = guiObj.AbsoluteSize
-
         local leftDist = pos.X.Offset
         local rightDist = (vp.X - sizePx.X) - pos.X.Offset
         local topDist = pos.Y.Offset - 36
         local botDist = (vp.Y - sizePx.Y) - pos.Y.Offset
-
         local snapped = false
         if leftDist <= snapPx then
             guiObj.Position = UDim2.new(0, 0, 0, pos.Y.Offset)
@@ -5704,7 +5680,6 @@ function Library:CreateWindow(WindowInfo)
             guiObj.Position = UDim2.new(0, vp.X - sizePx.X, 0, pos.Y.Offset)
             snapped = true
         end
-
         if topDist <= snapPx then
             guiObj.Position = UDim2.new(guiObj.Position.X.Scale, guiObj.Position.X.Offset, 0, 36)
             snapped = true
@@ -5712,20 +5687,19 @@ function Library:CreateWindow(WindowInfo)
             guiObj.Position = UDim2.new(guiObj.Position.X.Scale, guiObj.Position.X.Offset, 0, vp.Y - sizePx.Y)
             snapped = true
         end
-
         return snapped
     end
 
     local IconController = {}
     IconController.__index = IconController
 
-    function IconController.new(WindowRef, IconButton)
+    function IconController.new(WindowRef, opts)
         local self = setmetatable({}, IconController)
         self.Window = WindowRef
-        self.IconButton = IconButton
+        self.Root = getUiRoot()
 
         self.State = {
-            windowOpen = Library.Toggled,
+            windowOpen = true,
             dragging = false,
             startPos = nil,
             startFramePos = nil,
@@ -5736,7 +5710,9 @@ function Library:CreateWindow(WindowInfo)
         }
 
         self.Config = {
-            size = Vector2.new(tonumber(IconButton.Size.X.Offset), tonumber(IconButton.Size.Y.Offset)),
+            image = (opts and opts.image) or "rbxassetid://73063950477508",
+            size = (opts and opts.size) or Vector2.new(44, 44),
+            startPos = (opts and opts.startPos) or UDim2.new(0, 10, 0.5, -22),
             clickThreshold = 4,
             clickTimeLimit = 0.2,
             snapDistance = 15,
@@ -5744,24 +5720,51 @@ function Library:CreateWindow(WindowInfo)
             hideTween = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut),
         }
 
-        -- restore saved position or keep current
-        local savedPos = rawget(_G, "DevLogicIconPos")
-        if typeof(savedPos) == "UDim2" then
-            self.IconButton.Position = savedPos
+        local screenGui = self.Root:FindFirstChild("DevLogicIconGui")
+        if not screenGui then
+            screenGui = Instance.new("ScreenGui")
+            screenGui.Name = "DevLogicIconGui"
+            screenGui.IgnoreGuiInset = true
+            screenGui.ResetOnSpawn = false
+            screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+            pcall(function()
+                if syn and syn.protect_gui then syn.protect_gui(screenGui) end
+            end)
+            screenGui.Parent = self.Root
         end
+        self.ScreenGui = screenGui
 
-        -- initial visibility
-        self.IconButton.Visible = not self.State.windowOpen
-        clampToScreen(self.IconButton)
+        self.IconButton = Instance.new("ImageButton")
+        self.IconButton.Name = "DevLogicIcon"
+        self.IconButton.BackgroundTransparency = 1
+        self.IconButton.Image = self.Config.image
+        self.IconButton.Size = UDim2.fromOffset(self.Config.size.X, self.Config.size.Y)
+        self.IconButton.ZIndex = 100
+        self.IconButton.Active = true
+
+        local savedPos = rawget(_G, "DevLogicIconPos")
+        self.IconButton.Position = (typeof(savedPos) == "UDim2") and savedPos or self.Config.startPos
+
+        local corner = Instance.new("UICorner")
+        corner.CornerRadius = UDim.new(0, 8)
+        corner.Parent = self.IconButton
+
+        self.IconButton.Parent = screenGui
 
         self:HookWindow()
         self:SetupDrag()
 
+        if self.State.windowOpen then
+            self.IconButton.Visible = false
+        end
+
+        clampToScreen(self.IconButton)
         return self
     end
 
     function IconController:SetupDrag()
         local State = self.State
+        local Config = self.Config
         local btn = self.IconButton
 
         btn.InputBegan:Connect(function(input)
@@ -5773,10 +5776,7 @@ function Library:CreateWindow(WindowInfo)
             State.startFramePos = btn.Position
             State.totalDistance = 0
             State.startTime = tick()
-
-            if State.endConnection then
-                State.endConnection:Disconnect()
-            end
+            if State.endConnection then State.endConnection:Disconnect() end
             State.endConnection = input.Changed:Connect(function()
                 if input.UserInputState ~= Enum.UserInputState.End then return end
                 self:EndDrag()
@@ -5786,7 +5786,8 @@ function Library:CreateWindow(WindowInfo)
         if State.dragConnection then State.dragConnection:Disconnect() end
         State.dragConnection = UserInputService.InputChanged:Connect(function(input)
             if not State.dragging then return end
-            if input.UserInputType ~= Enum.UserInputType.MouseMovement and input.UserInputType ~= Enum.UserInputType.Touch then return end
+            local isMove = (input.UserInputType == Enum.UserInputType.MouseMovement) or (input.UserInputType == Enum.UserInputType.Touch)
+            if not isMove then return end
             self:UpdateDrag(input)
         end)
     end
@@ -5807,43 +5808,34 @@ function Library:CreateWindow(WindowInfo)
 
     function IconController:EndDrag()
         local State = self.State
+        local Config = self.Config
         if not State.dragging then return end
         State.dragging = false
-
-        if State.endConnection then
-            State.endConnection:Disconnect()
-            State.endConnection = nil
-        end
-
+        if State.endConnection then State.endConnection:Disconnect(); State.endConnection = nil end
         local totalTime = tick() - State.startTime
-        local isClick = (State.totalDistance <= self.Config.clickThreshold) and (totalTime <= self.Config.clickTimeLimit)
+        local isClick = (State.totalDistance <= Config.clickThreshold) and (totalTime <= Config.clickTimeLimit)
         if isClick then
             self:RestoreWindow()
         else
             clampToScreen(self.IconButton)
-            local snapped = edgeSnap(self.IconButton, self.Config.snapDistance)
+            local snapped = edgeSnap(self.IconButton, Config.snapDistance)
             _G.DevLogicIconPos = self.IconButton.Position
             if snapped then
-                local snapTween = TweenService:Create(self.IconButton, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-                    { Size = UDim2.fromOffset(self.Config.size.X + 4, self.Config.size.Y + 4) })
+                local snapTween = TweenService:Create(self.IconButton, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(Config.size.X + 4, Config.size.Y + 4) })
                 snapTween:Play()
                 snapTween.Completed:Connect(function()
-                    TweenService:Create(self.IconButton, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        { Size = UDim2.fromOffset(self.Config.size.X, self.Config.size.Y) }):Play()
+                    TweenService:Create(self.IconButton, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { Size = UDim2.fromOffset(Config.size.X, Config.size.Y) }):Play()
                 end)
             end
         end
     end
 
     function IconController:RestoreWindow()
+        if not self.Window then return end
         self.State.windowOpen = true
         local btn = self.IconButton
-
         btn.Active = false
-        local hideTween = TweenService:Create(btn, self.Config.hideTween, {
-            ImageTransparency = 1,
-            Size = UDim2.fromOffset(self.Config.size.X * 0.8, self.Config.size.Y * 0.8)
-        })
+        local hideTween = TweenService:Create(btn, self.Config.hideTween, { ImageTransparency = 1, Size = UDim2.fromOffset(self.Config.size.X * 0.8, self.Config.size.Y * 0.8) })
         hideTween:Play()
         hideTween.Completed:Connect(function()
             btn.Visible = false
@@ -5851,84 +5843,85 @@ function Library:CreateWindow(WindowInfo)
             btn.Size = UDim2.fromOffset(self.Config.size.X, self.Config.size.Y)
             btn.Active = true
         end)
-
-        if self.Window and self.Window.Open then
-            pcall(function() self.Window:Open() end)
-        end
+        if self.Window.Open then pcall(function() self.Window:Open() end) end
     end
 
     function IconController:MinimizeToIcon()
-        local btn = self.IconButton
+        if not self.IconButton then return end
         self.State.windowOpen = false
-        btn.Visible = true
-        btn.ImageTransparency = 1
-        btn.Size = UDim2.fromOffset(self.Config.size.X * 1.2, self.Config.size.Y * 1.2)
-        local showTween = TweenService:Create(btn, self.Config.showTween, {
-            ImageTransparency = 0,
-            Size = UDim2.fromOffset(self.Config.size.X, self.Config.size.Y)
-        })
+        self.IconButton.Visible = true
+        self.IconButton.ImageTransparency = 1
+        self.IconButton.Size = UDim2.fromOffset(self.Config.size.X * 1.2, self.Config.size.Y * 1.2)
+        local showTween = TweenService:Create(self.IconButton, self.Config.showTween, { ImageTransparency = 0, Size = UDim2.fromOffset(self.Config.size.X, self.Config.size.Y) })
         showTween:Play()
-        clampToScreen(btn)
+        clampToScreen(self.IconButton)
     end
 
     function IconController:HookWindow()
-        local W = self.Window
-        if not W then return end
-
-        if W.Close and not self._hookedClose then
-            local originalClose = W.Close
+        local Window = self.Window
+        if not Window then return end
+        if Window.Close and not self._hookedClose then
+            local originalClose = Window.Close
             self._hookedClose = true
-            W.Close = function(w, ...)
+            Window.Close = function(w, ...)
                 local result = originalClose(w, ...)
                 self:MinimizeToIcon()
                 return result
             end
         end
-
-        if W.Open and not self._hookedOpen then
-            local originalOpen = W.Open
+        if Window.Open and not self._hookedOpen then
+            local originalOpen = Window.Open
             self._hookedOpen = true
-            W.Open = function(w, ...)
+            Window.Open = function(w, ...)
                 local result = originalOpen(w, ...)
                 if self.IconButton then self.IconButton.Visible = false end
                 self.State.windowOpen = true
                 return result
             end
         end
-
-        if W.Toggle and not self._hookedToggle then
-            local originalToggle = W.Toggle
+        if Window.Toggle and not self._hookedToggle then
+            local originalToggle = Window.Toggle
             self._hookedToggle = true
-            W.Toggle = function(w, ...)
+            Window.Toggle = function(w, ...)
                 local result = originalToggle(w, ...)
-                task.delay(0.1, function()
-                    if Library.Toggled then
-                        self:RestoreWindow()
-                    else
-                        self:MinimizeToIcon()
-                    end
-                end)
+                task.wait(0.1)
+                if self.State.windowOpen then
+                    self:MinimizeToIcon()
+                else
+                    self:RestoreWindow()
+                end
                 return result
             end
         end
-
-        if W.OnDestroy and typeof(W.OnDestroy) == "function" then
-            W:OnDestroy(function()
+        if Window.OnDestroy and typeof(Window.OnDestroy) == "function" then
+            Window:OnDestroy(function()
                 self:Destroy()
             end)
         end
     end
 
     function IconController:Destroy()
-        local State = self.State
-        if State.dragConnection then State.dragConnection:Disconnect() end
-        if State.endConnection then State.endConnection:Disconnect() end
-        State.dragConnection = nil
-        State.endConnection = nil
+        if self.State.dragConnection then self.State.dragConnection:Disconnect() end
+        if self.State.endConnection then self.State.endConnection:Disconnect() end
+        self.State.dragConnection = nil
+        self.State.endConnection = nil
+        if self.IconButton and self.IconButton.Parent then self.IconButton:Destroy() end
+        if self.ScreenGui and self.ScreenGui.Parent and #self.ScreenGui:GetChildren() == 0 then self.ScreenGui:Destroy() end
     end
 
-    -- Build the controller instance using our existing OpenButton
-    local _AdvancedIcon = IconController.new(Window, OpenButton)
+    -- Create improved icon controller
+    local DevLogicIcon = IconController.new(Window, {
+        image = "rbxassetid://123156553209294",
+        size = Vector2.new(44, 44),
+        startPos = UDim2.new(0, 10, 0.5, -22),
+    })
+
+    _G.DevLogicIconCleanup = function()
+        if DevLogicIcon then
+            DevLogicIcon:Destroy()
+            DevLogicIcon = nil
+        end
+    end
 
     function Window:AddTab(...)
         local Name = nil
@@ -6815,10 +6808,7 @@ function Library:Toggle(Value: boolean?)
     MainFrame.Visible = Library.Toggled
     ModalElement.Modal = Library.Toggled
 
-    -- Ensure OpenButton visibility matches window state
-    if Library.OpenButton then
-        Library.OpenButton.Visible = not Library.Toggled
-    end
+    -- Advanced controller handles icon visibility
 
         if Library.Toggled and not Library.IsMobile then
             local OldMouseIconEnabled = UserInputService.MouseIconEnabled
@@ -6925,3 +6915,5 @@ Library:GiveSignal(Teams.ChildRemoved:Connect(OnTeamChange))
 
 getgenv().Library = Library
 return Library
+
+
