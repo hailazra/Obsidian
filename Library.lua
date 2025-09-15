@@ -5777,6 +5777,73 @@ function Library:CreateWindow(WindowInfo)
     --// Window Table \\--
     local Window = {}
 
+    -- Expose OpenButton customization API
+    function Window:GetOpenButton()
+        return Library.OpenButton
+    end
+
+    function Window:EditOpenButton(opts)
+        opts = opts or {}
+        local btn = Library.OpenButton
+        if not btn then return self end
+
+        local function setImage(value)
+            if typeof(value) == "number" then
+                btn.Image = "rbxassetid://" .. tostring(value)
+                btn.ImageRectOffset = Vector2.zero
+                btn.ImageRectSize = Vector2.zero
+            elseif typeof(value) == "string" then
+                if value:match("^rbxassetid://") then
+                    btn.Image = value
+                    btn.ImageRectOffset = Vector2.zero
+                    btn.ImageRectSize = Vector2.zero
+                elseif value:match("^%d+$") then
+                    btn.Image = "rbxassetid://" .. value
+                    btn.ImageRectOffset = Vector2.zero
+                    btn.ImageRectSize = Vector2.zero
+                else
+                    local icon = Library:GetIcon(value)
+                    if icon then
+                        btn.Image = icon.Url
+                        btn.ImageRectOffset = icon.ImageRectOffset
+                        btn.ImageRectSize = icon.ImageRectSize
+                    end
+                end
+            end
+        end
+
+        if opts.Image ~= nil then
+            setImage(opts.Image)
+        end
+
+        if typeof(opts.Size) == "Vector2" then
+            btn.Size = UDim2.fromOffset(opts.Size.X, opts.Size.Y)
+        end
+
+        local newPos = opts.Position or opts.StartPos
+        if typeof(newPos) == "UDim2" then
+            btn.Position = newPos
+            if opts.Save ~= false then
+                _G.DevLogicIconPos = newPos
+            end
+        end
+
+        if typeof(opts.CornerRadius) == "number" then
+            local corner = btn:FindFirstChildWhichIsA("UICorner")
+            if corner then
+                corner.CornerRadius = UDim.new(0, opts.CornerRadius)
+            end
+        end
+
+        if typeof(opts.Enabled) == "boolean" then
+            Library.OpenButtonEnabled = opts.Enabled
+            btn.Active = opts.Enabled
+            btn.Visible = opts.Enabled and not Library.Toggled or false
+        end
+
+        return self
+    end
+
     -- Provide window control helpers expected by icon controller
     function Window:Open()
         Library:Toggle(true)
@@ -6816,5 +6883,4 @@ Library:GiveSignal(Teams.ChildRemoved:Connect(OnTeamChange))
 
 getgenv().Library = Library
 return Library
-
 
