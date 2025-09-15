@@ -5642,6 +5642,7 @@ function Library:CreateWindow(WindowInfo)
             Library:Toggle()
         end)
         Library.OpenButton = OpenButton
+        OpenButton.Visible = not Library.Toggled
 
 
     --// Window Table \\--
@@ -6522,15 +6523,20 @@ function Library:CreateWindow(WindowInfo)
         return Tab
     end
 
-    function Library:Toggle(Value: boolean?)
-        if typeof(Value) == "boolean" then
-            Library.Toggled = Value
-        else
-            Library.Toggled = not Library.Toggled
-        end
+function Library:Toggle(Value: boolean?)
+    if typeof(Value) == "boolean" then
+        Library.Toggled = Value
+    else
+        Library.Toggled = not Library.Toggled
+    end
 
-        MainFrame.Visible = Library.Toggled
-        ModalElement.Modal = Library.Toggled
+    MainFrame.Visible = Library.Toggled
+    ModalElement.Modal = Library.Toggled
+
+    -- Ensure OpenButton visibility matches window state
+    if Library.OpenButton then
+        Library.OpenButton.Visible = not Library.Toggled
+    end
 
         if Library.Toggled and not Library.IsMobile then
             local OldMouseIconEnabled = UserInputService.MouseIconEnabled
